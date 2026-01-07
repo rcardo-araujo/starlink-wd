@@ -1,0 +1,1 @@
+{"status": "success", "data": {"resultType": "matrix", "result": [{"metric": {"__name__": "netflow_last_processed", "instance": "localhost:9438", "job": "netflow"}, "values": [[1763951100, "0"]]}]}}
