@@ -70,12 +70,28 @@ def split_by_gap(df_main, df_sec, gap_threshold_hours=4):
     max_gap_size = time_diff.max()
     gap_end_time = time_diff.idxmax() 
 
-    hours_gap = max_gap_size.total_seconds() / 3600
+    loc_end = df_main.index.get_loc(gap_end_time)
+
+    if isinstance(loc_end, slice):
+        loc_end = loc_end.start
+    elif hasattr(loc_end, "__len__"): 
+        loc_end = loc_end[0]
     
-    df_main_pre_gap = df_main[df_main.index < gap_end_time]
+    gap_start_time = df_main.index[loc_end - 1]
+    
+    df_main_pre_gap = df_main[df_main.index < gap_start_time]
     df_main_post_gap = df_main[df_main.index >= gap_end_time]
     
-    df_sec_pre_gap = df_sec[df_sec.index < gap_end_time]
+    df_sec_pre_gap = df_sec[df_sec.index < gap_start_time]
     df_sec_post_gap = df_sec[df_sec.index >= gap_end_time]
     
     return (df_main_pre_gap, df_sec_pre_gap), (df_main_post_gap, df_sec_post_gap)
+
+def sync_time_boundaries(df1, df2):
+    start_common = max(df1.index.min(), df2.index.min())
+    end_common = min(df1.index.max(), df2.index.max())
+    
+    df1_synced = df1[(df1.index >= start_common) & (df1.index <= end_common)]
+    df2_synced = df2[(df2.index >= start_common) & (df2.index <= end_common)]
+    
+    return df1_synced, df2_synced
