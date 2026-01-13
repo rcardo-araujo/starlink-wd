@@ -33,3 +33,28 @@ def format_starlink_ts(df: pd.DataFrame):
     df['dia'] = df['dt_local'].dt.strftime('%d/%m')
 
     return df
+
+def netflow_agg(df: pd.DataFrame, freq='10min'):
+    # Define o índice temporal para o resample
+    # Usamos 'first_local' como referência de quando o fluxo começou
+    df_agg = df.set_index('first_local').resample(freq).agg({
+        'first_utc': 'count',       # Conta quantos fluxos ocorreram (Volume)
+        'flow_duration_s': 'mean',  # Duração média
+        'bytes_por_fluxo': 'mean',  # Tamanho médio
+        'is_short_flow': 'mean'     # Fração de fluxos curtos (0 a 1)
+    })
+    
+    # Renomeia para ficar claro no plot
+    df_agg = df_agg.rename(columns={
+        'first_utc': 'count_fluxos',
+        'flow_duration_s': 'duracao_media_s',
+        'bytes_por_fluxo': 'bytes_medio',
+        'is_short_flow': 'pct_fluxos_curtos'
+    })
+    
+    # Cálculos derivados
+    seconds = pd.to_timedelta(freq).total_seconds()
+    df_agg['fluxos_por_segundo'] = df_agg['count_fluxos'] / seconds
+    df_agg['pct_fluxos_curtos'] = df_agg['pct_fluxos_curtos'] * 100 # Transforma 0.5 em 50%
+    
+    return df_agg
