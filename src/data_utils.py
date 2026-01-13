@@ -16,6 +16,8 @@ def format_netflow_ts(df: pd.DataFrame):
     
     df['bytes_por_fluxo'] = df['in_bytes']
     df['is_short_flow'] = df['flow_duration_s'] < 1
+
+    df = df.set_index('first_local').sort_index()
     
     return df
 
@@ -37,7 +39,7 @@ def format_starlink_ts(df: pd.DataFrame):
     return df
 
 def netflow_agg(df: pd.DataFrame, freq='10min'):
-    df_agg = df.set_index('first_local').resample(freq).agg({
+    df_agg = df.resample(freq).agg({
         'first_utc': 'count',       
         'flow_duration_s': 'mean',  
         'bytes_por_fluxo': 'mean', 
@@ -61,3 +63,19 @@ def starlink_agg(df: pd.DataFrame, freq='10min'):
     df_agg = df.resample(freq).mean(numeric_only=True)
 
     return df_agg
+
+def split_by_gap(df_main, df_sec, gap_threshold_hours=4):
+    time_diff = df_main.index.to_series().diff()
+    
+    max_gap_size = time_diff.max()
+    gap_end_time = time_diff.idxmax() 
+
+    hours_gap = max_gap_size.total_seconds() / 3600
+    
+    df_main_pre_gap = df_main[df_main.index < gap_end_time]
+    df_main_post_gap = df_main[df_main.index >= gap_end_time]
+    
+    df_sec_pre_gap = df_sec[df_sec.index < gap_end_time]
+    df_sec_post_gap = df_sec[df_sec.index >= gap_end_time]
+    
+    return (df_main_pre_gap, df_sec_pre_gap), (df_main_post_gap, df_sec_post_gap)
