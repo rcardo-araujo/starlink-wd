@@ -38,11 +38,19 @@ def format_starlink_ts(df: pd.DataFrame):
 
     return df
 
-def netflow_agg(df: pd.DataFrame, freq='10min'):
+def netflow_agg(df_nf: pd.DataFrame, freq='10min'):
+    df = df_nf.copy()
+    
+    if 'in_bytes' in df.columns and 'flow_duration_s' in df.columns:
+        duration_safe = df['flow_duration_s'].replace(0, 0.001)
+        df['throughput_bps'] = (df['in_bytes'] * 8) / duration_safe
+    
     df_agg = df.resample(freq).agg({
         'first_utc': 'count',       
         'flow_duration_s': 'mean',  
         'bytes_por_fluxo': 'mean', 
+        'in_packets': 'mean',
+        'throughput_bps': 'mean',
         'is_short_flow': 'mean'     
     })
     
@@ -50,6 +58,8 @@ def netflow_agg(df: pd.DataFrame, freq='10min'):
         'first_utc': 'count_fluxos',
         'flow_duration_s': 'duracao_media_s',
         'bytes_por_fluxo': 'bytes_medio',
+        'in_packets': 'pacotes_medio',
+        'throughput_bps': 'throughput_bps',
         'is_short_flow': 'pct_fluxos_curtos'
     })
     

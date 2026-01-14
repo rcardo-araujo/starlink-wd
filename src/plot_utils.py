@@ -2,18 +2,21 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import seaborn as sns
 import pandas as pd
+import os
 
 # Configurações
 COLOR_SL = "#2354A1"
 COLOR_NF = "#C23138"
 
-FIGURE_SIZE = (14, 16)
+FIGURE_SIZE = (14, 10)
 DPI = 140
 FONT_SIZE_LABELS = 14
 FONT_SIZE_TICKS = 12
 LINE_WIDTH = 2
 LINE_WIDTH_PLOT = 1.5
 BORDER_WIDTH = 2.0
+
+BOXPLOT_PALETTE = "Blues_d" 
 
 def apply_plot_config():
     plt.rcParams.update({
@@ -28,7 +31,12 @@ def apply_plot_config():
     })
 
 def apply_axis_style(ax, xlabel, ylabel, color_y='black'):
-    ax.set_xlabel(xlabel, fontsize=FONT_SIZE_LABELS)
+    if xlabel:
+        ax.set_xlabel(xlabel, fontsize=FONT_SIZE_LABELS)
+    else:
+        ax.set_xlabel("", fontsize=FONT_SIZE_LABELS) 
+
+    ax.set_ylabel(ylabel, fontsize=FONT_SIZE_LABELS)
     
     ax.tick_params(axis='both', which='major', labelsize=FONT_SIZE_TICKS)
     ax.tick_params(axis='y', labelcolor=color_y)
@@ -101,3 +109,82 @@ def plot_correlation_series(df_sl, df_nf, output_path=None):
         plt.savefig(output_path, dpi=DPI)
     else:
         plt.show()
+
+def classify_by_quantiles(df):
+    try:
+        df['link_state'] = pd.qcut(
+            df['popPingLatencyMs'], 
+            q=3, 
+            labels=['High SNR', 'Medium SNR', 'Low SNR']
+        )
+        df['link_state'] = df['link_state'].astype(str)
+        
+        # Handover: 10% piores casos de perda
+        loss_threshold = df['pingDropRate'].quantile(0.90)
+        if loss_threshold == 0: loss_threshold = 0.001
+            
+        mask_handover = df['pingDropRate'] > loss_threshold
+        df.loc[mask_handover, 'link_state'] = 'Handover/Instability'
+        
+        return df
+        
+    except Exception as e:
+        print(f"Erro na classificação: {e}. Usando fallback.")
+        df['link_state'] = 'High SNR'
+        return df
+        
+    except Exception as e:
+        print(f"Erro na classificação por quantis: {e}")
+        df['link_state'] = 'High SNR'
+        return df, 0
+
+def plot_physical_states_boxplot(df_sl, df_nf, output_folder):
+    apply_plot_config()
+
+    df = pd.merge(df_sl, df_nf, left_index=True, right_index=True, how='inner')
+    
+    if df.empty:
+        print("Erro: Dataframe vazio.")
+        return
+        
+    df = classify_by_quantiles(df)
+    
+    order_states = ['High SNR', 'Medium SNR', 'Low SNR', 'Handover/Instability']
+    existing = df['link_state'].unique()
+    final_order = [s for s in order_states if s in existing]
+
+    metrics = [
+        ('throughput_bps', 'Throughput (bps)', 'troughout_snr_boxplot.png'),
+        ('duracao_media_s', 'Average Flow Duration (s)', 'duration_snr_boxplot.png'),
+        ('pacotes_medio', 'Average Packets per Flow', 'packets_snr_boxplot.png') 
+    ]
+
+    for col_y, label_y, filename in metrics:
+        if col_y not in df.columns:
+            print(f"Skipping {col_y}: coluna não encontrada.")
+            continue
+
+        fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+        
+        sns.boxplot(
+            data=df, 
+            x='link_state', 
+            y=col_y, 
+            hue='link_state',
+            legend=False,
+            order=final_order,
+            palette=BOXPLOT_PALETTE,
+            ax=ax,
+            linewidth=2,
+            showfliers=False
+        )
+        
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha='right')
+        
+        apply_axis_style(ax, "", label_y)
+        
+        save_path = os.path.join(output_folder, filename)
+        
+        fig.set_size_inches(FIGURE_SIZE)
+        plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
+        plt.close(fig)
