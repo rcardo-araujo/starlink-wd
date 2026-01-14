@@ -307,3 +307,59 @@ def plot_flow_duration_histogram(df_sl, df_nf, output_folder="histograms"):
     fig.set_size_inches(FIGURE_SIZE)
     plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
     plt.close(fig)
+
+def plot_temporal_heatmap(df_sl, df_nf, output_folder="heatmaps"):
+    apply_plot_config()
+    
+    if output_folder and not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    df = pd.merge(df_sl, df_nf, left_index=True, right_index=True, how='inner')
+    
+    if df.empty:
+        print("Erro: DataFrame vazio.")
+        return
+
+    df['hour'] = df.index.hour
+
+    df['date_str'] = df.index.strftime('%Y-%m-%d')
+
+    metrics = [
+        ('popPingLatencyMs', 'Avg Latency (ms)', 'coolwarm', 'heat_latency.png'),
+        ('pingDropRate', 'Packet Loss Rate (Failure)', 'Reds', 'heat_packet_loss.png')
+    ]
+
+    for col, cbar_label, cmap, filename in metrics:
+        if col not in df.columns:
+            continue
+            
+        heatmap_data = df.pivot_table(index='date_str', columns='hour', values=col, aggfunc='mean')
+
+        num_days = len(heatmap_data)
+        height = max(6, num_days * 0.5) 
+        fig, ax = plt.subplots(figsize=(12, height))
+
+        # 3. Plotar Heatmap
+        sns.heatmap(
+            heatmap_data,
+            cmap=cmap,
+            annot=False,
+            fmt=".1f" if col == 'popPingLatencyMs' else ".3f",
+            linewidths=0.5,
+            linecolor='white',
+            cbar_kws={'label': ''}, 
+            ax=ax
+        )
+
+        current_y_labels = heatmap_data.index
+        new_y_labels = [pd.to_datetime(d).strftime('%d/%m') for d in current_y_labels]
+        ax.set_yticklabels(new_y_labels, rotation=45)
+
+        ax.set_ylabel("") 
+
+        ax.set_xlabel("Hour of Day", fontsize=FONT_SIZE_LABELS, fontweight='normal', labelpad=15)
+        plt.xticks(rotation=0) 
+
+        save_path = os.path.join(output_folder, filename)
+        plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
+        plt.close(fig)
