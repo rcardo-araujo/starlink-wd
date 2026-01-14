@@ -363,3 +363,104 @@ def plot_temporal_heatmap(df_sl, df_nf, output_folder="heatmaps"):
         save_path = os.path.join(output_folder, filename)
         plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
         plt.close(fig)
+
+def extract_event_windows(df, window_pre=3, window_post=6):
+    thresh_loss = df['pingDropRate'].quantile(0.90)
+    if thresh_loss == 0: thresh_loss = 0.005 # Fallback
+    
+    # Cria uma série booleana: 1 se for evento, 0 se não
+    is_event = (df['pingDropRate'] > thresh_loss) | (df['fraction_obstructed'] > 0.001)
+    
+    event_starts = is_event.astype(int).diff() == 1
+    event_indices = df.index[event_starts]
+    
+    if len(event_indices) == 0:
+        return pd.DataFrame() # Sem eventos
+
+    slices = []
+
+    df_reset = df.reset_index()
+    
+    for start_time in event_indices:
+        idx_loc = df.index.get_loc(start_time)
+
+        idx_min = max(0, idx_loc - window_pre)
+        idx_max = min(len(df), idx_loc + window_post + 1)
+        
+        subset = df.iloc[idx_min:idx_max].copy()
+
+        t0 = df.index[idx_loc]
+        subset['rel_time_min'] = (subset.index - t0).total_seconds() / 60.0
+
+        subset['event_id'] = t0
+        
+        slices.append(subset)
+        
+    if not slices:
+        return pd.DataFrame()
+        
+    return pd.concat(slices)
+
+def plot_recovery_analysis(df_sl, df_nf, output_folder="recovery_plots"):
+    apply_plot_config()
+    
+    if output_folder and not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    df = pd.merge(df_sl, df_nf, left_index=True, right_index=True, how='inner')
+    
+    if 'throughput_bps' not in df.columns:
+        duration = df['duracao_media_s'].replace(0, 0.001)
+        df['throughput_bps'] = (df['bytes_medio'] * df['count_fluxos'] * 8) / duration
+    df['throughput_mbps'] = df['throughput_bps'] / 1e6
+    
+    try:
+        window_sec = df.index.to_series().diff().median().total_seconds()
+        if pd.isna(window_sec) or window_sec == 0: window_sec = 600
+    except:
+        window_sec = 600
+        
+    df['flows_per_sec'] = df['count_fluxos'] / window_sec
+
+    df_aligned = extract_event_windows(df, window_pre=4, window_post=8)
+    
+    if df_aligned.empty:
+        print("Aviso: Nenhum evento significativo encontrado para gerar o gráfico de recuperação.")
+        return
+
+    fig, axes = plt.subplots(3, 1, figsize=FIGURE_SIZE, sharex=True)
+    
+    metrics = [
+        ('throughput_mbps', 'Throughput (Mbps)'),
+        ('flows_per_sec', 'Flow Initiation Rate (flows/s)'),
+        ('duracao_media_s', 'Avg Flow Duration (s)')
+    ]
+    
+    for ax, (col, label) in zip(axes, metrics):
+        sns.lineplot(
+            data=df_aligned,
+            x='rel_time_min',
+            y=col,
+            ax=ax,
+            color=COLOR_SL,
+            linewidth=2.5,
+            errorbar=None
+        )
+        
+        ax.axvline(x=0, color=COLOR_NF, linestyle='--', linewidth=2, label='Event Onset (t₀)')
+        
+        ax.set_ylabel(label, fontsize=FONT_SIZE_LABELS)
+        ax.grid(True, linestyle='--', alpha=0.5)
+
+        if ax != axes[-1]:
+            ax.set_xlabel("")
+    
+    axes[0].legend(loc='upper right')
+    
+    axes[-1].set_xlabel("Time Relative to Event (minutes)", fontsize=FONT_SIZE_LABELS)
+
+    plt.tight_layout()
+    
+    save_path = os.path.join(output_folder, "recovery_analysis.png")
+    plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
+    plt.close(fig)
