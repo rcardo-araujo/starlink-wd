@@ -70,7 +70,26 @@ def netflow_agg(df_nf: pd.DataFrame, freq='10min'):
     return df_agg
 
 def starlink_agg(df: pd.DataFrame, freq='10min'):
-    df_agg = df.resample(freq).mean(numeric_only=True)
+    df_agg = df.resample(freq).agg({
+        'popPingLatencyMs': ['mean', 'std'], 
+        'pingDropRate': 'mean',
+        'is_snr_above_noise_floor': 'mean',
+        'fraction_obstructed': 'mean',
+        'downloadBps': 'mean',  
+        'uploadBps': 'mean'   
+    })
+    
+    df_agg.columns = ['_'.join(col).strip() for col in df_agg.columns.values]
+    
+    df_agg = df_agg.rename(columns={
+        'popPingLatencyMs_mean': 'popPingLatencyMs',
+        'popPingLatencyMs_std':  'jitter_ms',
+        'pingDropRate_mean':     'pingDropRate',
+        'is_snr_above_noise_floor_mean': 'is_snr_above_noise_floor',
+        'fraction_obstructed_mean': 'fraction_obstructed',
+        'downloadBps_mean': 'downloadBps',
+        'uploadBps_mean': 'uploadBps'
+    })
 
     return df_agg
 

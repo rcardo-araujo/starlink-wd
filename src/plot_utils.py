@@ -9,7 +9,7 @@ from scipy import stats
 COLOR_SL = "#2354A1"
 COLOR_NF = "#C23138"
 
-FIGURE_SIZE = (12, 8)
+FIGURE_SIZE = (10, 10)
 DPI = 140
 FONT_SIZE_LABELS = 14
 FONT_SIZE_TICKS = 12
@@ -108,8 +108,6 @@ def plot_correlation_series(df_sl, df_nf, output_path=None):
     
     if output_path:
         plt.savefig(output_path, dpi=DPI)
-    else:
-        plt.show()
 
 def classify_by_quantiles(df):
     try:
@@ -155,9 +153,9 @@ def plot_physical_states_boxplot(df_sl, df_nf, output_folder):
     final_order = [s for s in order_states if s in existing]
 
     metrics = [
-        ('throughput_bps', 'Throughput (bps)', 'troughout_snr_boxplot.png'),
-        ('duracao_media_s', 'Average Flow Duration (s)', 'duration_snr_boxplot.png'),
-        ('pacotes_medio', 'Average Packets per Flow', 'packets_snr_boxplot.png') 
+        ('throughput_bps', 'Throughput (bps)', 'box_troughput_snrt.png'),
+        ('duracao_media_s', 'Average Flow Duration (s)', 'box_duration_snr.png'),
+        ('pacotes_medio', 'Average Packets per Flow', 'box_packets_snr.png') 
     ]
 
     for col_y, label_y, filename in metrics:
@@ -213,19 +211,19 @@ def plot_correlation_scatter(df_sl, df_nf, output_folder):
     pairs = [
         ('popPingLatencyMs', 'Latency (ms)', 
          'duracao_media_s', 'Average Flow Duration (s)', 
-         'latency_vs_duration_scatter.png'),
+         'scatter_latency_vs_duration.png'),
 
         ('jitter_ms', 'Jitter (Latency Std Dev)', 
          'throughput_bps', 'Throughput (bps)', 
-         'jitter_vs_throughput_scatter.png'),
+         'scatter_jitter_vs_throughput.png'),
 
         ('pingDropRate', 'Packet Loss Rate', 
          'pacotes_medio', 'Average Packets per Flow', 
-         'loss_vs_packets_scatter.png'),
+         'scatter_loss_vs_packets.png'),
          
         ('popPingLatencyMs', 'Latency (ms)', 
          'throughput_bps', 'Throughput (bps)', 
-         'latency_vs_throughput_scatter.png')
+         'scatter_latency_vs_throughput.png')
     ]
 
     for col_x, label_x, col_y, label_y, filename in pairs:
@@ -254,3 +252,58 @@ def plot_correlation_scatter(df_sl, df_nf, output_folder):
         fig.set_size_inches(FIGURE_SIZE)
         plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
         plt.close(fig)
+
+def classify_simple_status(df):
+    lat_threshold = df['popPingLatencyMs'].quantile(0.75) 
+    loss_threshold = df['pingDropRate'].quantile(0.90)    
+    if loss_threshold == 0: loss_threshold = 0.001
+
+    def get_status(row):
+        if row['pingDropRate'] > loss_threshold or row['popPingLatencyMs'] > lat_threshold:
+            return 'Degraded'
+        else:
+            return 'Stable'
+
+    df['network_status'] = df.apply(get_status, axis=1)
+    return df
+
+def plot_flow_duration_histogram(df_sl, df_nf, output_folder="histograms"):
+    apply_plot_config()
+    
+    if output_folder and not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    df = pd.merge(df_sl, df_nf, left_index=True, right_index=True, how='inner')
+
+    df = classify_simple_status(df)
+
+    if 'duracao_media_s' not in df.columns:
+        print("Erro: Coluna 'duracao_media_s' não encontrada.")
+        return
+
+    df = df[df['duracao_media_s'] > 0.1]
+
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+    
+    sns.histplot(
+        data=df,
+        x="duracao_media_s",
+        hue="network_status",
+        hue_order=["Stable", "Degraded"],
+        palette={"Stable": COLOR_SL, "Degraded": COLOR_NF},
+        element="step",     
+        stat="percent",     
+        common_norm=False,   
+        bins=30,             
+        alpha=0.4,           
+        ax=ax
+    )
+    
+    sns.move_legend(ax, "upper right", title=None, frameon=True)
+
+    apply_axis_style(ax, "Average Flow Duration (s)", "Frequency (%)")
+    
+    save_path = os.path.join(output_folder, "hist_flow_duration.png")
+    fig.set_size_inches(FIGURE_SIZE)
+    plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
+    plt.close(fig)
