@@ -3,12 +3,13 @@ import matplotlib.dates as mdates
 import seaborn as sns
 import pandas as pd
 import os
+from scipy import stats
 
 # Configurações
 COLOR_SL = "#2354A1"
 COLOR_NF = "#C23138"
 
-FIGURE_SIZE = (14, 10)
+FIGURE_SIZE = (12, 8)
 DPI = 140
 FONT_SIZE_LABELS = 14
 FONT_SIZE_TICKS = 12
@@ -185,6 +186,71 @@ def plot_physical_states_boxplot(df_sl, df_nf, output_folder):
         
         save_path = os.path.join(output_folder, filename)
         
+        fig.set_size_inches(FIGURE_SIZE)
+        plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
+        plt.close(fig)
+
+def prepare_scatter_data(df_sl, df_nf):
+    df = pd.merge(df_sl, df_nf, left_index=True, right_index=True, how='inner')
+    
+    if 'jitter_ms' not in df.columns:
+        df['jitter_ms'] = df['popPingLatencyMs'].rolling(window=3).std().fillna(0)
+        
+    return df
+
+def plot_correlation_scatter(df_sl, df_nf, output_folder):
+    apply_plot_config()
+    
+    if output_folder and not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    df = prepare_scatter_data(df_sl, df_nf)
+    
+    if df.empty:
+        print("Erro: DataFrame vazio.")
+        return
+
+    pairs = [
+        ('popPingLatencyMs', 'Latency (ms)', 
+         'duracao_media_s', 'Average Flow Duration (s)', 
+         'latency_vs_duration_scatter.png'),
+
+        ('jitter_ms', 'Jitter (Latency Std Dev)', 
+         'throughput_bps', 'Throughput (bps)', 
+         'jitter_vs_throughput_scatter.png'),
+
+        ('pingDropRate', 'Packet Loss Rate', 
+         'pacotes_medio', 'Average Packets per Flow', 
+         'loss_vs_packets_scatter.png'),
+         
+        ('popPingLatencyMs', 'Latency (ms)', 
+         'throughput_bps', 'Throughput (bps)', 
+         'latency_vs_throughput_scatter.png')
+    ]
+
+    for col_x, label_x, col_y, label_y, filename in pairs:
+        if col_x not in df.columns or col_y not in df.columns:
+            continue
+
+        fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+        
+        sns.scatterplot(
+            data=df, x=col_x, y=col_y, 
+            ax=ax, color=COLOR_NF, s=100, alpha=0.7, edgecolor='black', linewidth=0.8
+        )
+        
+        clean_data = df[[col_x, col_y]].dropna()
+        if len(clean_data) > 2:
+            r, p_value = stats.pearsonr(clean_data[col_x], clean_data[col_y])
+            
+            text_str = f'Pearson r = {r:.2f}'
+            ax.text(0.95, 0.95, text_str, transform=ax.transAxes, fontsize=16,
+                    verticalalignment='top', horizontalalignment='right',
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        apply_axis_style(ax, label_x, label_y)
+        
+        save_path = os.path.join(output_folder, filename)
         fig.set_size_inches(FIGURE_SIZE)
         plt.savefig(save_path, dpi=DPI, bbox_inches='tight')
         plt.close(fig)
