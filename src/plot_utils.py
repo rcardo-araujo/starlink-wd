@@ -49,53 +49,61 @@ def apply_axis_style(ax, xlabel, ylabel, color_y='black'):
         ax.spines[side].set_color('black')
         ax.spines[side].set_linewidth(BORDER_WIDTH)
 
-def plot_correlation_series(df_sl, df_nf, output_path=None):
+def plot_correlation_series(df_sl, df_nf, output_folder, tag=""):
     apply_plot_config()
+    
+    if output_folder and not os.path.exists(output_folder):
+        os.makedirs(output_folder)
     
     if not df_sl.empty and not df_nf.empty:
         t0 = min(df_sl.index.min(), df_nf.index.min())
     else:
-        t0 = df_sl.index.min() if not df_sl.empty else df_nf.index.min()
+        # Fallback seguro se um dos DFs estiver vazio
+        if not df_sl.empty: t0 = df_sl.index.min()
+        elif not df_nf.empty: t0 = df_nf.index.min()
+        else: return # Nada a plotar
 
     x_sl = (df_sl.index - t0).total_seconds() / 60.0
     x_nf = (df_nf.index - t0).total_seconds() / 60.0
 
-    fig, axes = plt.subplots(4, 1, figsize=FIGURE_SIZE, sharex=True, constrained_layout=True)
-    
+    # Configuração dos Plots
     plots_config = [
         (
-            'Signal Quality (SNR) vs Flow Volume',   
+            'Signal Quality (SNR) vs Flow Volume',    
             'is_snr_above_noise_floor', 'SNR > Noise Floor', 
-            'fluxos_por_segundo', 'Flows/s'          
+            'fluxos_por_segundo', 'Flows/s',
+            'corr_snr_vs_volume.png'
         ),
         (
-            'Latency vs Flow Duration',             
-            'popPingLatencyMs', 'Latency (ms)',      
-            'duracao_media_s', 'Avg Duration (s)'    
+            'Latency vs Flow Duration',              
+            'popPingLatencyMs', 'Latency (ms)',       
+            'duracao_media_s', 'Avg Duration (s)',    
+            'corr_latency_vs_duration.png'
         ),
         (
-            'Packet Loss vs Flow Size',              
-            'pingDropRate', 'Packet Loss Rate',      
-            'bytes_medio', 'Avg Bytes/Flow'          
+            'Packet Loss vs Flow Size',               
+            'pingDropRate', 'Packet Loss Rate',       
+            'bytes_medio', 'Avg Bytes/Flow',          
+            'corr_loss_vs_size.png'
         ),
         (
-            'Obstruction vs Short Flows',            
-            'fraction_obstructed', 'Obstruction',   
-            'pct_fluxos_curtos', '% Short Flows'     
+            'Obstruction vs Short Flows',             
+            'fraction_obstructed', 'Obstruction',    
+            'pct_fluxos_curtos', '% Short Flows',     
+            'corr_obstruction_vs_short.png'
         )
     ]
     
-    for ax, (title, sl_col, sl_lbl, nf_col, nf_lbl) in zip(axes, plots_config):
-        ax.tick_params(labelbottom=True)
+    for title, sl_col, sl_lbl, nf_col, nf_lbl, filename in plots_config:
         
-        # Eixo Starlink
+        fig, ax = plt.subplots(figsize=(8, 4), constrained_layout=True)
+  
         if sl_col in df_sl.columns:
             ax.plot(x_sl, df_sl[sl_col], color=COLOR_SL, linewidth=LINE_WIDTH_PLOT, label=sl_lbl)
             apply_axis_style(ax, 'Elapsed time (min)', sl_lbl, color_y=COLOR_SL)
         else:
             ax.text(0.5, 0.5, f"Dados ausentes: {sl_col}", ha='center', transform=ax.transAxes)
-        
-        # Eixo NetFlow
+
         ax2 = ax.twinx()
         if nf_col in df_nf.columns:
             ax2.plot(x_nf, df_nf[nf_col], color=COLOR_NF, linestyle='-', linewidth=LINE_WIDTH_PLOT, label=nf_lbl)
@@ -105,9 +113,20 @@ def plot_correlation_series(df_sl, df_nf, output_path=None):
         lines_1, labels_1 = ax.get_legend_handles_labels()
         lines_2, labels_2 = ax2.get_legend_handles_labels()
         ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper right', frameon=True)
-    
-    if output_path:
-        plt.savefig(output_path, dpi=DPI)
+        
+        full_title = f"{title} ({tag})" if tag else title
+
+        if tag:
+            base, ext = os.path.splitext(filename)
+            final_filename = f"{base}_{tag}{ext}" 
+        else:
+            final_filename = filename
+
+        if output_folder:
+            save_path = os.path.join(output_folder, final_filename)
+            plt.savefig(save_path, dpi=DPI)
+        
+        plt.close(fig)
 
 def classify_by_quantiles(df):
     try:
